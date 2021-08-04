@@ -85,6 +85,7 @@ class LEVELDB_EXPORT Status {
     kIOError = 5
   };
 
+	/* kok 就不存了 */
   Code code() const {
     return (state_ == nullptr) ? kOk : static_cast<Code>(state_[4]);
   }

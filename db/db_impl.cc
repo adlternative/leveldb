@@ -1482,40 +1482,52 @@ DB::~DB() = default;
 
 Status DB::Open(const Options& options, const std::string& dbname, DB** dbptr) {
   *dbptr = nullptr;
-
+	/* 根据选项和数据库名 创建一个 数据库实现类 */
   DBImpl* impl = new DBImpl(options, dbname);
+	/* 加锁 */
   impl->mutex_.Lock();
+	/* 版本编辑器？ */
   VersionEdit edit;
   // Recover handles create_if_missing, error_if_exists
+	// 翻译： Recover 函数会处理 create_if_missing, error_if_exists 两种选项
   bool save_manifest = false;
   Status s = impl->Recover(&edit, &save_manifest);
+	/* 如果恢复 ok 并且 没有memtable？ */
   if (s.ok() && impl->mem_ == nullptr) {
     // Create new log and a corresponding memtable.
-    uint64_t new_log_number = impl->versions_->NewFileNumber();
+		// 创建新的日志和 memtable
+    uint64_t new_log_number = impl->versions_->NewFileNumber();		/* 新的日志文件号 */
     WritableFile* lfile;
     s = options.env->NewWritableFile(LogFileName(dbname, new_log_number),
-                                     &lfile);
+                                     &lfile); /* 似乎是创建新可写的日志文件？ */
     if (s.ok()) {
-      edit.SetLogNumber(new_log_number);
-      impl->logfile_ = lfile;
-      impl->logfile_number_ = new_log_number;
-      impl->log_ = new log::Writer(lfile);
-      impl->mem_ = new MemTable(impl->internal_comparator_);
-      impl->mem_->Ref();
+      edit.SetLogNumber(new_log_number); /* 设置日志号 */
+      impl->logfile_ = lfile; /* 设置日志文件 */
+      impl->logfile_number_ = new_log_number; /* 设置日志号 */
+      impl->log_ = new log::Writer(lfile);/* 设置日志？ */
+      impl->mem_ = new MemTable(impl->internal_comparator_);/* 创建 memtable? */
+      impl->mem_->Ref();/* 引用计数 ++ */
     }
   }
   if (s.ok() && save_manifest) {
+		/* 版本编辑器 设置前日志号 0 表示没有旧的日志需要恢复 */
     edit.SetPrevLogNumber(0);  // No older logs needed after recovery.
+		/* 版本编辑器 设置日志号 */
     edit.SetLogNumber(impl->logfile_number_);
+		/* 应用日志 +锁？ */
     s = impl->versions_->LogAndApply(&edit, &impl->mutex_);
   }
   if (s.ok()) {
+		/* 删除过时的文件 */
     impl->RemoveObsoleteFiles();
+		/* 可能的调度压缩 */
     impl->MaybeScheduleCompaction();
   }
+	/* 解锁 */
   impl->mutex_.Unlock();
   if (s.ok()) {
     assert(impl->mem_ != nullptr);
+		/* 向外传递 DB 实体 */
     *dbptr = impl;
   } else {
     delete impl;

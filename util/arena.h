@@ -30,6 +30,7 @@ class Arena {
 
   // Returns an estimate of the total memory usage of data allocated
   // by the arena.
+	/* 读取内存使用量 */
   size_t MemoryUsage() const {
     return memory_usage_.load(std::memory_order_relaxed);
   }
@@ -52,17 +53,23 @@ class Arena {
   std::atomic<size_t> memory_usage_;
 };
 
+/* 似乎这是对外接口 */
 inline char* Arena::Allocate(size_t bytes) {
   // The semantics of what to return are a bit messy if we allow
   // 0-byte allocations, so we disallow them here (we don't need
   // them for our internal use).
+	/* 如果我们允许 0 字节分配，返回内容的语义有点混乱，
+	所以我们在这里禁止它们（我们不需要它们供我们内部使用） */
   assert(bytes > 0);
+	/* 如果需要分配的大小比 空闲大小 要小的话 */
   if (bytes <= alloc_bytes_remaining_) {
+		/* 我们直接从 alloc_ptr_ 拿 bytes 大小就 ok 了   */
     char* result = alloc_ptr_;
     alloc_ptr_ += bytes;
     alloc_bytes_remaining_ -= bytes;
     return result;
   }
+	/* 否则执行回落函数并返回分配的内存 */
   return AllocateFallback(bytes);
 }
 
