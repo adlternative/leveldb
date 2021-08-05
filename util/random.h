@@ -23,6 +23,7 @@ class Random {
       seed_ = 1;
     }
   }
+  /* seed_ = (seed_ * A) % M */
   uint32_t Next() {
     static const uint32_t M = 2147483647L;  // 2^31-1
     static const uint64_t A = 16807;        // bits 14, 8, 7, 5, 2, 1, 0
@@ -50,11 +51,15 @@ class Random {
 
   // Randomly returns true ~"1/n" of the time, and false otherwise.
   // REQUIRES: n > 0
+  /* 1/n 概率 */
   bool OneIn(int n) { return (Next() % n) == 0; }
 
   // Skewed: pick "base" uniformly from range [0,max_log] and then
   // return "base" random bits.  The effect is to pick a number in the
   // range [0,2^max_log-1] with exponential bias towards smaller numbers.
+  /* Skewed：从范围 [0,max_log] 中统一选择“base”，然后返回“base”随机位。
+  效果是在 [0,2^max_log-1] 范围内选择一个数字，对较小的数字有指数偏差。 */
+	/* 小数字概率大，大数字概率小 */
   uint32_t Skewed(int max_log) { return Uniform(1 << Uniform(max_log + 1)); }
 };
 

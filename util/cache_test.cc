@@ -50,11 +50,13 @@ class CacheTest : public testing::Test {
   }
 
   void Insert(int key, int value, int charge = 1) {
+    /* 插入后不用直接 引用计数-- = 1 放入 lru */
     cache_->Release(cache_->Insert(EncodeKey(key), EncodeValue(value), charge,
                                    &CacheTest::Deleter));
   }
 
   Cache::Handle* InsertAndReturnHandle(int key, int value, int charge = 1) {
+    /* 插入后且用引用计数为2 */
     return cache_->Insert(EncodeKey(key), EncodeValue(value), charge,
                           &CacheTest::Deleter);
   }
@@ -67,19 +69,19 @@ CacheTest* CacheTest::current_;
 TEST_F(CacheTest, HitAndMiss) {
   ASSERT_EQ(-1, Lookup(100));
 
-  Insert(100, 101);
-  ASSERT_EQ(101, Lookup(100));
+  Insert(100, 101);             // ref=1
+  ASSERT_EQ(101, Lookup(100));  // ref +1 -1
   ASSERT_EQ(-1, Lookup(200));
   ASSERT_EQ(-1, Lookup(300));
 
-  Insert(200, 201);
-  ASSERT_EQ(101, Lookup(100));
-  ASSERT_EQ(201, Lookup(200));
+  Insert(200, 201);             // ref=1
+  ASSERT_EQ(101, Lookup(100));  // ref +1 -1
+  ASSERT_EQ(201, Lookup(200));  // ref +1 -1
   ASSERT_EQ(-1, Lookup(300));
 
-  Insert(100, 102);
-  ASSERT_EQ(102, Lookup(100));
-  ASSERT_EQ(201, Lookup(200));
+  Insert(100, 102);             // ref=1 , 旧项 ref -1 = 0
+  ASSERT_EQ(102, Lookup(100));  // ref +1 -1
+  ASSERT_EQ(201, Lookup(200));  // ref +1 -1
   ASSERT_EQ(-1, Lookup(300));
 
   ASSERT_EQ(1, deleted_keys_.size());

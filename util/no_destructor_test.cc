@@ -17,7 +17,10 @@ namespace {
 struct DoNotDestruct {
  public:
   DoNotDestruct(uint32_t a, uint64_t b) : a(a), b(b) {}
-  ~DoNotDestruct() { std::abort(); }
+  ~DoNotDestruct() {
+    std::cout << "发生析构了？" << std::endl;
+    std::abort();
+  }
 
   // Used to check constructor argument forwarding.
   uint32_t a;
