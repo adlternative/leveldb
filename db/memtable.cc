@@ -3,18 +3,25 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include "db/memtable.h"
+
 #include "db/dbformat.h"
+
 #include "leveldb/comparator.h"
 #include "leveldb/env.h"
 #include "leveldb/iterator.h"
+
 #include "util/coding.h"
 
 namespace leveldb {
 
+/*  从data的前4个字节中 获得长度 然后返回数据 */
 static Slice GetLengthPrefixedSlice(const char* data) {
   uint32_t len;
   const char* p = data;
+  /* 获取长度LEN */
   p = GetVarint32Ptr(p, p + 5, &len);  // +5: we assume "p" is not corrupted
+
+  /* 返回数据 */
   return Slice(p, len);
 }
 
@@ -25,6 +32,7 @@ MemTable::~MemTable() { assert(refs_ == 0); }
 
 size_t MemTable::ApproximateMemoryUsage() { return arena_.MemoryUsage(); }
 
+/* 仅仅比较数据 */
 int MemTable::KeyComparator::operator()(const char* aptr,
                                         const char* bptr) const {
   // Internal keys are encoded as length-prefixed strings.
@@ -38,7 +46,9 @@ int MemTable::KeyComparator::operator()(const char* aptr,
 // into this scratch space.
 static const char* EncodeKey(std::string* scratch, const Slice& target) {
   scratch->clear();
+  /* 放入长度 */
   PutVarint32(scratch, target.size());
+  /* 放入数据 */
   scratch->append(target.data(), target.size());
   return scratch->data();
 }
@@ -67,7 +77,9 @@ class MemTableIterator : public Iterator {
   Status status() const override { return Status::OK(); }
 
  private:
+  /* skip list 迭代器 */
   MemTable::Table::Iterator iter_;
+  /* EncodeKey -> Seek */
   std::string tmp_;  // For passing to EncodeKey
 };
 
@@ -82,25 +94,26 @@ void MemTable::Add(SequenceNumber s, ValueType type, const Slice& key,
   //  value bytes  : char[value.size()]
   size_t key_size = key.size();
   size_t val_size = value.size();
-  size_t internal_key_size = key_size + 8;
+  size_t internal_key_size = key_size + 8; /* [key,seq,type] */
   const size_t encoded_len = VarintLength(internal_key_size) +
                              internal_key_size + VarintLength(val_size) +
-                             val_size;
+                             val_size; /* [klen,key,seq,type] [vlen,value] */
   char* buf = arena_.Allocate(encoded_len);
-  char* p = EncodeVarint32(buf, internal_key_size);
-  std::memcpy(p, key.data(), key_size);
+  char* p = EncodeVarint32(buf, internal_key_size); /* 写入 klen */
+  std::memcpy(p, key.data(), key_size);             /* 写入 key */
   p += key_size;
-  EncodeFixed64(p, (s << 8) | type);
+  EncodeFixed64(p, (s << 8) | type); /* 写入 seq | type */
   p += 8;
-  p = EncodeVarint32(p, val_size);
-  std::memcpy(p, value.data(), val_size);
+  p = EncodeVarint32(p, val_size);        /* 写入 vlen */
+  std::memcpy(p, value.data(), val_size); /* 写入 value */
   assert(p + val_size == buf + encoded_len);
-  table_.Insert(buf);
+  table_.Insert(buf); /* 插入到跳表中 */
 }
 
 bool MemTable::Get(const LookupKey& key, std::string* value, Status* s) {
   Slice memkey = key.memtable_key();
   Table::Iterator iter(&table_);
+  /* 在跳表中找 key */
   iter.Seek(memkey.data());
   if (iter.Valid()) {
     // entry format is:
@@ -114,23 +127,32 @@ bool MemTable::Get(const LookupKey& key, std::string* value, Status* s) {
     // all entries with overly large sequence numbers.
     const char* entry = iter.key();
     uint32_t key_length;
+    /* 获取 key 长度 key_length  */
     const char* key_ptr = GetVarint32Ptr(entry, entry + 5, &key_length);
+    /* 比较 key_length - 8 也就是 user_key 部分  */
     if (comparator_.comparator.user_comparator()->Compare(
             Slice(key_ptr, key_length - 8), key.user_key()) == 0) {
       // Correct user key
+      /* 获取 tag */
       const uint64_t tag = DecodeFixed64(key_ptr + key_length - 8);
+      /* 获取 type */
       switch (static_cast<ValueType>(tag & 0xff)) {
+          /* value 类型 */
         case kTypeValue: {
+          /* 获得 value */
           Slice v = GetLengthPrefixedSlice(key_ptr + key_length);
+          /* 拷贝 */
           value->assign(v.data(), v.size());
           return true;
         }
+          /* 删除 类型 则没找到 */
         case kTypeDeletion:
           *s = Status::NotFound(Slice());
           return true;
       }
     }
   }
+  /* 没找到 */
   return false;
 }
 

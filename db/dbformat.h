@@ -14,6 +14,7 @@
 #include "leveldb/filter_policy.h"
 #include "leveldb/slice.h"
 #include "leveldb/table_builder.h"
+
 #include "util/coding.h"
 #include "util/logging.h"
 
@@ -92,6 +93,7 @@ void AppendInternalKey(std::string* result, const ParsedInternalKey& key);
 bool ParseInternalKey(const Slice& internal_key, ParsedInternalKey* result);
 
 // Returns the user key portion of an internal key.
+/* 从 internal_key　中返回　user_key 的那一部分*/
 inline Slice ExtractUserKey(const Slice& internal_key) {
   assert(internal_key.size() >= 8);
   return Slice(internal_key.data(), internal_key.size() - 8);
@@ -137,22 +139,23 @@ class InternalKey {
 
  public:
   InternalKey() {}  // Leave rep_ as empty to indicate it is invalid
+  /* 实锤　ParsedInternalKey　就是个辅助的工具类　将编码后的内容填写到　rep_ */
   InternalKey(const Slice& user_key, SequenceNumber s, ValueType t) {
     AppendInternalKey(&rep_, ParsedInternalKey(user_key, s, t));
   }
-
+  /* 这个　DecodeFrom　就是个　assign */
   bool DecodeFrom(const Slice& s) {
     rep_.assign(s.data(), s.size());
     return !rep_.empty();
   }
-
+  /* Encode 也是啥也没有做　返回 rep_ */
   Slice Encode() const {
     assert(!rep_.empty());
     return rep_;
   }
-
+  /* 仅仅返回　USER_KEY 部分 */
   Slice user_key() const { return ExtractUserKey(rep_); }
-
+  /* 这个　SetFrom　就是个从　ParsedInternalKey　的　assign */
   void SetFrom(const ParsedInternalKey& p) {
     rep_.clear();
     AppendInternalKey(&rep_, p);
@@ -168,12 +171,15 @@ inline int InternalKeyComparator::Compare(const InternalKey& a,
   return Compare(a.Encode(), b.Encode());
 }
 
+/* 将　internal_key　解析到　ParsedInternalKey 中 */
 inline bool ParseInternalKey(const Slice& internal_key,
                              ParsedInternalKey* result) {
   const size_t n = internal_key.size();
   if (n < 8) return false;
+  /* 提取最后 8 字节 */
   uint64_t num = DecodeFixed64(internal_key.data() + n - 8);
   uint8_t c = num & 0xff;
+  /* 获取序列号，类型和 user_key */
   result->sequence = num >> 8;
   result->type = static_cast<ValueType>(c);
   result->user_key = Slice(internal_key.data(), n - 8);
@@ -205,7 +211,7 @@ class LookupKey {
   // We construct a char array of the form:
   //    klength  varint32               <-- start_
   //    userkey  char[klength]          <-- kstart_
-  //    tag      uint64
+  //    tag (sequence + type)      uint64
   //                                    <-- end_
   // The array is a suitable MemTable key.
   // The suffix starting with "userkey" can be used as an InternalKey.

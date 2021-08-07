@@ -328,6 +328,7 @@ SkipList<Key, Comparator>::FindGreaterOrEqual(const Key& key,
   }
 }
 
+/*  find x if x < key < x->next and level = 0 */
 template <typename Key, class Comparator>
 typename SkipList<Key, Comparator>::Node*
 SkipList<Key, Comparator>::FindLessThan(const Key& key) const {
@@ -342,6 +343,7 @@ SkipList<Key, Comparator>::FindLessThan(const Key& key) const {
       if (level == 0) {
         return x;
       } else {
+        /* 越下层跨度越小 x->next 越接近恰好小 */
         // Switch to next list
         level--;
       }
@@ -351,6 +353,7 @@ SkipList<Key, Comparator>::FindLessThan(const Key& key) const {
   }
 }
 
+/* 一路从 head_ 从最高层开始找到最后一层就好 */
 template <typename Key, class Comparator>
 typename SkipList<Key, Comparator>::Node* SkipList<Key, Comparator>::FindLast()
     const {

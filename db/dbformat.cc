@@ -12,13 +12,15 @@
 
 namespace leveldb {
 
+// |seq:7|t:1|
 static uint64_t PackSequenceAndType(uint64_t seq, ValueType t) {
-  assert(seq <= kMaxSequenceNumber);
+  assert(seq <= kMaxSequenceNumber);  // 7字节
   assert(t <= kValueTypeForSeek);
-  return (seq << 8) | t;
+  return (seq << 8) | t;  // seq 左移一个字节
 }
-
+/* 将 ParsedInternalKey　格式化到　result 中*/
 void AppendInternalKey(std::string* result, const ParsedInternalKey& key) {
+  // | user_key | seq:7 | t:1 |
   result->append(key.user_key.data(), key.user_key.size());
   PutFixed64(result, PackSequenceAndType(key.sequence, key.type));
 }
@@ -49,6 +51,9 @@ int InternalKeyComparator::Compare(const Slice& akey, const Slice& bkey) const {
   //    increasing user key (according to user-supplied comparator)
   //    decreasing sequence number
   //    decreasing type (though sequence# should be enough to disambiguate)
+  // 首先根据user key按升序排列
+  // 然后根据sequence number按降序排列
+  // 最后根据value type按降序排列
   int r = user_comparator_->Compare(ExtractUserKey(akey), ExtractUserKey(bkey));
   if (r == 0) {
     const uint64_t anum = DecodeFixed64(akey.data() + akey.size() - 8);
@@ -65,14 +70,19 @@ int InternalKeyComparator::Compare(const Slice& akey, const Slice& bkey) const {
 void InternalKeyComparator::FindShortestSeparator(std::string* start,
                                                   const Slice& limit) const {
   // Attempt to shorten the user portion of the key
+  // 尝试缩短用户部分的 key
   Slice user_start = ExtractUserKey(*start);
   Slice user_limit = ExtractUserKey(limit);
   std::string tmp(user_start.data(), user_start.size());
   user_comparator_->FindShortestSeparator(&tmp, user_limit);
   if (tmp.size() < user_start.size() &&
       user_comparator_->Compare(user_start, tmp) < 0) {
+    /* tmp(用户的 key 的确变短了但是 却逻辑值变大了)
+                使用最早可能的数去缩短用户的 key */
+
     // User key has become shorter physically, but larger logically.
     // Tack on the earliest possible number to the shortened user key.
+    /* kMaxSequenceNumber 是七字节最大数字  kValueTypeForSeek 1*/
     PutFixed64(&tmp,
                PackSequenceAndType(kMaxSequenceNumber, kValueTypeForSeek));
     assert(this->Compare(*start, tmp) < 0);
@@ -116,7 +126,7 @@ bool InternalFilterPolicy::KeyMayMatch(const Slice& key, const Slice& f) const {
 
 LookupKey::LookupKey(const Slice& user_key, SequenceNumber s) {
   size_t usize = user_key.size();
-  size_t needed = usize + 13;  // A conservative estimate
+  size_t needed = usize + 13;  // A conservative estimate　一个保守估计
   char* dst;
   if (needed <= sizeof(space_)) {
     dst = space_;
@@ -124,11 +134,12 @@ LookupKey::LookupKey(const Slice& user_key, SequenceNumber s) {
     dst = new char[needed];
   }
   start_ = dst;
-  dst = EncodeVarint32(dst, usize + 8);
+  dst = EncodeVarint32(dst, usize + 8);  // sizeof(user_key + tag)
   kstart_ = dst;
-  std::memcpy(dst, user_key.data(), usize);
+  std::memcpy(dst, user_key.data(), usize);  // user_key
   dst += usize;
-  EncodeFixed64(dst, PackSequenceAndType(s, kValueTypeForSeek));
+  EncodeFixed64(
+      dst, PackSequenceAndType(s, kValueTypeForSeek));  // tag = sequence + type
   dst += 8;
   end_ = dst;
 }

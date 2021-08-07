@@ -7,12 +7,14 @@
 #include <cstdint>
 
 #include "leveldb/env.h"
+
 #include "util/coding.h"
 #include "util/crc32c.h"
 
 namespace leveldb {
 namespace log {
 
+/* 初始化 crc的基数 */
 static void InitTypeCrc(uint32_t* type_crc) {
   for (int i = 0; i <= kMaxRecordType; i++) {
     char t = static_cast<char>(i);
@@ -25,7 +27,8 @@ Writer::Writer(WritableFile* dest) : dest_(dest), block_offset_(0) {
 }
 
 Writer::Writer(WritableFile* dest, uint64_t dest_length)
-    : dest_(dest), block_offset_(dest_length % kBlockSize) {
+    : dest_(dest),
+      block_offset_(dest_length % kBlockSize) { /* dest_length % 0x8000 */
   InitTypeCrc(type_crc_);
 }
 
@@ -60,14 +63,18 @@ Status Writer::AddRecord(const Slice& slice) {
     const size_t fragment_length = (left < avail) ? left : avail;
 
     RecordType type;
-    const bool end = (left == fragment_length);
+    const bool end =
+        (left ==
+         fragment_length); /* 说明已经剩余需要写的长度已经没有到本块的结尾了。
+                            */
     if (begin && end) {
-      type = kFullType;
+      type = kFullType; /* 说明该块大小 <=32kb */
     } else if (begin) {
-      type = kFirstType;
+      type = kFirstType; /* 说明该块过大，该分片是第一部分 */
     } else if (end) {
-      type = kLastType;
+      type = kLastType; /* 说明该块过大，且该分片是最后一部分 */
     } else {
+      /* 说明该块过大，且该分片是中间的一部分 （占满 32 kb） */
       type = kMiddleType;
     }
 
@@ -79,26 +86,35 @@ Status Writer::AddRecord(const Slice& slice) {
   return s;
 }
 
+/* kHeaderSize =  |checksum:4|length:2|type:1|
+ * Data:length
+ */
 Status Writer::EmitPhysicalRecord(RecordType t, const char* ptr,
                                   size_t length) {
   assert(length <= 0xffff);  // Must fit in two bytes
   assert(block_offset_ + kHeaderSize + length <= kBlockSize);
 
+  /* 首先填充 HEAD */
   // Format the header
   char buf[kHeaderSize];
-  buf[4] = static_cast<char>(length & 0xff);
-  buf[5] = static_cast<char>(length >> 8);
-  buf[6] = static_cast<char>(t);
+  buf[4] = static_cast<char>(length & 0xff); /* length [0] */
+  buf[5] = static_cast<char>(length >> 8);   /* length [1] */
+  buf[6] = static_cast<char>(t); /* type  FULL, FIRST, MIDDLE, LAST*/
 
   // Compute the crc of the record type and the payload.
+  /* 根据当前块的类型，数据内容和大小来计算校验和 */
   uint32_t crc = crc32c::Extend(type_crc_[t], ptr, length);
+  /* 调整以适合存储 */
   crc = crc32c::Mask(crc);  // Adjust for storage
-  EncodeFixed32(buf, crc);
+  EncodeFixed32(buf, crc);  /* 将校验和写到buf前4个字节 */
 
   // Write the header and the payload
+  /* 写 HEAD */
   Status s = dest_->Append(Slice(buf, kHeaderSize));
   if (s.ok()) {
+    /* 然后写数据 */
     s = dest_->Append(Slice(ptr, length));
+    /* 刷磁盘 */
     if (s.ok()) {
       s = dest_->Flush();
     }

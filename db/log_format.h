@@ -13,6 +13,7 @@ namespace log {
 
 enum RecordType {
   // Zero is reserved for preallocated files
+  /* 0 是为预分配的文件准备的 */
   kZeroType = 0,
 
   kFullType = 1,

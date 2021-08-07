@@ -5,11 +5,12 @@
 #ifndef STORAGE_LEVELDB_DB_MEMTABLE_H_
 #define STORAGE_LEVELDB_DB_MEMTABLE_H_
 
-#include <string>
-
 #include "db/dbformat.h"
 #include "db/skiplist.h"
+#include <string>
+
 #include "leveldb/db.h"
+
 #include "util/arena.h"
 
 namespace leveldb {
@@ -40,6 +41,8 @@ class MemTable {
 
   // Returns an estimate of the number of bytes of data in use by this
   // data structure. It is safe to call when MemTable is being modified.
+  //返回此数据结构使用的数据字节数的估计值。 在修改 MemTable 时调用是安全的。
+  //近似内存使用
   size_t ApproximateMemoryUsage();
 
   // Return an iterator that yields the contents of the memtable.
@@ -48,11 +51,18 @@ class MemTable {
   // while the returned iterator is live.  The keys returned by this
   // iterator are internal keys encoded by AppendInternalKey in the
   // db/format.{h,cc} module.
+  // 返回一个迭代器，它产生内存表的内容。
+  //
+  // 调用者必须确保底层 MemTable 在返回的迭代器处于活动状态时保持活动状态。
+  // 此迭代器返回的键是由 db/format.{h,cc} 模块中的 AppendInternalKey
+  // 编码的内部键。
   Iterator* NewIterator();
 
   // Add an entry into memtable that maps key to value at the
   // specified sequence number and with the specified type.
   // Typically value will be empty if type==kTypeDeletion.
+  // 将一个条目添加到 memtable 中，该条目将键映射到指定序列号和指定类型的值。
+  // 如果 type==kTypeDeletion，通常值为空。
   void Add(SequenceNumber seq, ValueType type, const Slice& key,
            const Slice& value);
 
@@ -60,11 +70,14 @@ class MemTable {
   // If memtable contains a deletion for key, store a NotFound() error
   // in *status and return true.
   // Else, return false.
+  // 如果 memtable 包含 key 的值，则将其存储在 *value 中并返回 true。 如果
+  // memtable 包含对 key 的删除，则在 *status 中存储 NotFound() 错误并返回
+  // true。 否则，返回false。
   bool Get(const LookupKey& key, std::string* value, Status* s);
 
  private:
-  friend class MemTableIterator;
-  friend class MemTableBackwardIterator;
+  friend class MemTableIterator;         /* 内存表迭代器 */
+  friend class MemTableBackwardIterator; /* 内存表向后迭代器 */
 
   struct KeyComparator {
     const InternalKeyComparator comparator;

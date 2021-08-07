@@ -2,16 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
-#include <dirent.h>
-#include <fcntl.h>
-#include <pthread.h>
-#include <sys/mman.h>
-#include <sys/resource.h>
-#include <sys/stat.h>
-#include <sys/time.h>
-#include <sys/types.h>
-#include <unistd.h>
-
 #include <atomic>
 #include <cerrno>
 #include <cstddef>
@@ -19,17 +9,27 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <dirent.h>
+#include <fcntl.h>
 #include <limits>
+#include <pthread.h>
 #include <queue>
 #include <set>
 #include <string>
+#include <sys/mman.h>
+#include <sys/resource.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/types.h>
 #include <thread>
 #include <type_traits>
+#include <unistd.h>
 #include <utility>
 
 #include "leveldb/env.h"
 #include "leveldb/slice.h"
 #include "leveldb/status.h"
+
 #include "port/port.h"
 #include "port/thread_annotations.h"
 #include "util/env_posix_test_helper.h"
@@ -57,6 +57,7 @@ constexpr const int kOpenBaseFlags = 0;
 
 constexpr const size_t kWritableFileBufferSize = 65536;
 
+/* 只区别了 ENOENT 和 IO 错误两种情况 */
 Status PosixError(const std::string& context, int error_number) {
   if (error_number == ENOENT) {
     return Status::NotFound(context, std::strerror(error_number));
@@ -69,6 +70,7 @@ Status PosixError(const std::string& context, int error_number) {
 // Currently used to limit read-only file descriptors and mmap file usage
 // so that we do not run out of file descriptors or virtual memory, or run into
 // kernel performance problems for very large databases.
+/* 资源限制器 */
 class Limiter {
  public:
   // Limit maximum number of resources to |max_acquires|.
@@ -80,17 +82,22 @@ class Limiter {
   // If another resource is available, acquire it and return true.
   // Else return false.
   bool Acquire() {
+    // old_acquires_allowed = acquires_allowed_;
+    // acquires_allowed_ -=1；
     int old_acquires_allowed =
         acquires_allowed_.fetch_sub(1, std::memory_order_relaxed);
-
+    /* 有资源 */
     if (old_acquires_allowed > 0) return true;
-
+    /* old_acquires_allowed <=0 则 acquires_allowed_ <= -1
+     * 因此我们把它加回来
+     */
     acquires_allowed_.fetch_add(1, std::memory_order_relaxed);
     return false;
   }
 
   // Release a resource acquired by a previous call to Acquire() that returned
   // true.
+  /* 释放资源 */
   void Release() { acquires_allowed_.fetch_add(1, std::memory_order_relaxed); }
 
  private:
@@ -110,7 +117,7 @@ class PosixSequentialFile final : public SequentialFile {
   PosixSequentialFile(std::string filename, int fd)
       : fd_(fd), filename_(filename) {}
   ~PosixSequentialFile() override { close(fd_); }
-
+  /* 顺序读就很正常读就完事 */
   Status Read(size_t n, Slice* result, char* scratch) override {
     Status status;
     while (true) {
@@ -145,6 +152,7 @@ class PosixSequentialFile final : public SequentialFile {
 // Instances of this class are thread-safe, as required by the RandomAccessFile
 // API. Instances are immutable and Read() only calls thread-safe library
 // functions.
+/* pread 实现的 随机访问 */
 class PosixRandomAccessFile final : public RandomAccessFile {
  public:
   // The new instance takes ownership of |fd|. |fd_limiter| must outlive this
@@ -167,7 +175,7 @@ class PosixRandomAccessFile final : public RandomAccessFile {
       fd_limiter_->Release();
     }
   }
-
+  /* 随机读用 pread */
   Status Read(uint64_t offset, size_t n, Slice* result,
               char* scratch) const override {
     int fd = fd_;
@@ -181,6 +189,7 @@ class PosixRandomAccessFile final : public RandomAccessFile {
     assert(fd != -1);
 
     Status status;
+		// TODO(adlternative):EINTR
     ssize_t read_size = ::pread(fd, scratch, n, static_cast<off_t>(offset));
     *result = Slice(scratch, (read_size < 0) ? 0 : read_size);
     if (read_size < 0) {
@@ -207,6 +216,7 @@ class PosixRandomAccessFile final : public RandomAccessFile {
 // Instances of this class are thread-safe, as required by the RandomAccessFile
 // API. Instances are immutable and Read() only calls thread-safe library
 // functions.
+/* mmap 实现的 随机访问 在接口外 mmap 在析构 munmap */
 class PosixMmapReadableFile final : public RandomAccessFile {
  public:
   // mmap_base[0, length-1] points to the memory-mapped contents of the file. It
@@ -246,6 +256,7 @@ class PosixMmapReadableFile final : public RandomAccessFile {
   const std::string filename_;
 };
 
+/* 可写文件 有缓冲 flush|fsync */
 class PosixWritableFile final : public WritableFile {
  public:
   PosixWritableFile(std::string filename, int fd)
@@ -267,31 +278,37 @@ class PosixWritableFile final : public WritableFile {
     const char* write_data = data.data();
 
     // Fit as much as possible into buffer.
+    /* kWritableFileBufferSize - pos_ 是 65536B 缓冲空闲大小 */
     size_t copy_size = std::min(write_size, kWritableFileBufferSize - pos_);
     std::memcpy(buf_ + pos_, write_data, copy_size);
     write_data += copy_size;
     write_size -= copy_size;
     pos_ += copy_size;
+    /* buffer能装下不写 */
     if (write_size == 0) {
       return Status::OK();
     }
 
     // Can't fit in buffer, so need to do at least one write.
+    /* 写磁盘 */
     Status status = FlushBuffer();
     if (!status.ok()) {
       return status;
     }
 
     // Small writes go to buffer, large writes are written directly.
+    /* 小拷buffer */
     if (write_size < kWritableFileBufferSize) {
       std::memcpy(buf_, write_data, write_size);
       pos_ = write_size;
       return Status::OK();
     }
+    /* 大直接写 */
     return WriteUnbuffered(write_data, write_size);
   }
 
   Status Close() override {
+    /* 写 关 */
     Status status = FlushBuffer();
     const int close_result = ::close(fd_);
     if (close_result < 0 && status.ok()) {
@@ -436,6 +453,7 @@ class PosixWritableFile final : public WritableFile {
   const std::string dirname_;  // The directory of filename_.
 };
 
+/* 文件锁  fcntl(fd, F_SETLK ... */
 int LockOrUnlock(int fd, bool lock) {
   errno = 0;
   struct ::flock file_lock_info;
@@ -448,6 +466,7 @@ int LockOrUnlock(int fd, bool lock) {
 }
 
 // Instances are thread-safe because they are immutable.
+/* 仅仅是文件锁的信息 */
 class PosixFileLock : public FileLock {
  public:
   PosixFileLock(int fd, std::string filename)
@@ -468,6 +487,7 @@ class PosixFileLock : public FileLock {
 // same process.
 //
 // Instances are thread-safe because all member data is guarded by a mutex.
+/* 锁表 线程安全 只能一个线程加锁 */
 class PosixLockTable {
  public:
   bool Insert(const std::string& fname) LOCKS_EXCLUDED(mu_) {
@@ -497,6 +517,7 @@ class PosixEnv : public Env {
     std::abort();
   }
 
+  /* open */
   Status NewSequentialFile(const std::string& filename,
                            SequentialFile** result) override {
     int fd = ::open(filename.c_str(), O_RDONLY | kOpenBaseFlags);
@@ -509,6 +530,7 @@ class PosixEnv : public Env {
     return Status::OK();
   }
 
+  /* open + stat + mmap ( MAP_SHARED ) + close */
   Status NewRandomAccessFile(const std::string& filename,
                              RandomAccessFile** result) override {
     *result = nullptr;
@@ -541,7 +563,7 @@ class PosixEnv : public Env {
     }
     return status;
   }
-
+  /* open */
   Status NewWritableFile(const std::string& filename,
                          WritableFile** result) override {
     int fd = ::open(filename.c_str(),
@@ -555,6 +577,7 @@ class PosixEnv : public Env {
     return Status::OK();
   }
 
+  /* open(append */
   Status NewAppendableFile(const std::string& filename,
                            WritableFile** result) override {
     int fd = ::open(filename.c_str(),
@@ -571,7 +594,7 @@ class PosixEnv : public Env {
   bool FileExists(const std::string& filename) override {
     return ::access(filename.c_str(), F_OK) == 0;
   }
-
+  /* 获得一个文件夹的所有子文件 opendir+readdir+closedir */
   Status GetChildren(const std::string& directory_path,
                      std::vector<std::string>* result) override {
     result->clear();
@@ -586,28 +609,28 @@ class PosixEnv : public Env {
     ::closedir(dir);
     return Status::OK();
   }
-
+  /* unlink */
   Status RemoveFile(const std::string& filename) override {
     if (::unlink(filename.c_str()) != 0) {
       return PosixError(filename, errno);
     }
     return Status::OK();
   }
-
+  /* mkdir */
   Status CreateDir(const std::string& dirname) override {
     if (::mkdir(dirname.c_str(), 0755) != 0) {
       return PosixError(dirname, errno);
     }
     return Status::OK();
   }
-
+  /* rmdir */
   Status RemoveDir(const std::string& dirname) override {
     if (::rmdir(dirname.c_str()) != 0) {
       return PosixError(dirname, errno);
     }
     return Status::OK();
   }
-
+  /* stat */
   Status GetFileSize(const std::string& filename, uint64_t* size) override {
     struct ::stat file_stat;
     if (::stat(filename.c_str(), &file_stat) != 0) {
@@ -617,7 +640,7 @@ class PosixEnv : public Env {
     *size = file_stat.st_size;
     return Status::OK();
   }
-
+  /* rename */
   Status RenameFile(const std::string& from, const std::string& to) override {
     if (std::rename(from.c_str(), to.c_str()) != 0) {
       return PosixError(from, errno);
@@ -627,33 +650,35 @@ class PosixEnv : public Env {
 
   Status LockFile(const std::string& filename, FileLock** lock) override {
     *lock = nullptr;
-
+    /* 打开文件 */
     int fd = ::open(filename.c_str(), O_RDWR | O_CREAT | kOpenBaseFlags, 0644);
     if (fd < 0) {
       return PosixError(filename, errno);
     }
-
+    /* 插入到锁表 若已经有进程上锁则返回 0 表示失败，关闭文件并表示错误。*/
     if (!locks_.Insert(filename)) {
       ::close(fd);
       return Status::IOError("lock " + filename, "already held by process");
     }
-
+    /* 上读写文件锁 */
     if (LockOrUnlock(fd, true) == -1) {
       int lock_errno = errno;
       ::close(fd);
       locks_.Remove(filename);
       return PosixError("lock " + filename, lock_errno);
     }
-
+    /* 创建锁结构返回 */
     *lock = new PosixFileLock(fd, filename);
     return Status::OK();
   }
 
   Status UnlockFile(FileLock* lock) override {
     PosixFileLock* posix_file_lock = static_cast<PosixFileLock*>(lock);
+    /* 解锁 */
     if (LockOrUnlock(posix_file_lock->fd(), false) == -1) {
       return PosixError("unlock " + posix_file_lock->filename(), errno);
     }
+    /* 在锁表删除 */
     locks_.Remove(posix_file_lock->filename());
     ::close(posix_file_lock->fd());
     delete posix_file_lock;
@@ -686,6 +711,7 @@ class PosixEnv : public Env {
     return Status::OK();
   }
 
+  /* open + fdopen ---> fp  */
   Status NewLogger(const std::string& filename, Logger** result) override {
     int fd = ::open(filename.c_str(),
                     O_APPEND | O_WRONLY | O_CREAT | kOpenBaseFlags, 0644);
@@ -750,9 +776,11 @@ class PosixEnv : public Env {
 };
 
 // Return the maximum number of concurrent mmaps.
+// 1000
 int MaxMmaps() { return g_mmap_limit; }
 
 // Return the maximum number of read-only files to keep open.
+// 50|无穷大|limit无穷大/5
 int MaxOpenFiles() {
   if (g_open_read_only_file_limit >= 0) {
     return g_open_read_only_file_limit;
@@ -777,7 +805,7 @@ PosixEnv::PosixEnv()
       started_background_thread_(false),
       mmap_limiter_(MaxMmaps()),
       fd_limiter_(MaxOpenFiles()) {}
-
+/* 添加后台线程调度任务 */
 void PosixEnv::Schedule(
     void (*background_work_function)(void* background_work_arg),
     void* background_work_arg) {
@@ -799,6 +827,7 @@ void PosixEnv::Schedule(
   background_work_mutex_.Unlock();
 }
 
+/* 后台线程执行调度任务 */
 void PosixEnv::BackgroundThreadMain() {
   while (true) {
     background_work_mutex_.Lock();
@@ -885,6 +914,7 @@ void EnvPosixTestHelper::SetReadOnlyMMapLimit(int limit) {
   g_mmap_limit = limit;
 }
 
+/* 单例 */
 Env* Env::Default() {
   static PosixDefaultEnv env_container;
   return env_container.env();

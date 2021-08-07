@@ -12,6 +12,7 @@
 
 #include "leveldb/env.h"
 #include "leveldb/status.h"
+
 #include "port/port.h"
 #include "port/thread_annotations.h"
 #include "util/mutexlock.h"
@@ -67,7 +68,8 @@ class FileState {
     blocks_.clear();
     size_ = 0;
   }
-
+  /* 从 offset 偏移量开始读取 n 个字节到 result 中 。 [scratch] 槽 存放数据
+   * result 保存 [data,len] 视图 */
   Status Read(uint64_t offset, size_t n, Slice* result, char* scratch) const {
     MutexLock lock(&blocks_mutex_);
     if (offset > size_) {
@@ -104,7 +106,7 @@ class FileState {
     *result = Slice(scratch, n);
     return Status::OK();
   }
-
+  /* 将 data 拷贝到内存数组中 */
   Status Append(const Slice& data) {
     const char* src = data.data();
     size_t src_len = data.size();
@@ -112,7 +114,7 @@ class FileState {
     MutexLock lock(&blocks_mutex_);
     while (src_len > 0) {
       size_t avail;
-      size_t offset = size_ % kBlockSize;
+      size_t offset = size_ % kBlockSize;  // offset 初始为0
 
       if (offset != 0) {
         // There is some room in the last block.
@@ -156,7 +158,7 @@ class SequentialFileImpl : public SequentialFile {
   }
 
   ~SequentialFileImpl() override { file_->Unref(); }
-
+  /* 注意从 pos_ 开始读 （意味我们每次读都是顺序读取）*/
   Status Read(size_t n, Slice* result, char* scratch) override {
     Status s = file_->Read(pos_, n, result, scratch);
     if (s.ok()) {
@@ -164,7 +166,7 @@ class SequentialFileImpl : public SequentialFile {
     }
     return s;
   }
-
+  /* 游标 pos_ += n */
   Status Skip(uint64_t n) override {
     if (pos_ > file_->Size()) {
       return Status::IOError("pos_ > file_->Size()");
@@ -187,7 +189,7 @@ class RandomAccessFileImpl : public RandomAccessFile {
   explicit RandomAccessFileImpl(FileState* file) : file_(file) { file_->Ref(); }
 
   ~RandomAccessFileImpl() override { file_->Unref(); }
-
+  /* 随机读取不过是从指定偏移量开始 */
   Status Read(uint64_t offset, size_t n, Slice* result,
               char* scratch) const override {
     return file_->Read(offset, n, result, scratch);

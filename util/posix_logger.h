@@ -8,13 +8,12 @@
 #ifndef STORAGE_LEVELDB_UTIL_POSIX_LOGGER_H_
 #define STORAGE_LEVELDB_UTIL_POSIX_LOGGER_H_
 
-#include <sys/time.h>
-
 #include <cassert>
 #include <cstdarg>
 #include <cstdio>
 #include <ctime>
 #include <sstream>
+#include <sys/time.h>
 #include <thread>
 
 #include "leveldb/env.h"
@@ -29,7 +28,7 @@ class PosixLogger final : public Logger {
   explicit PosixLogger(std::FILE* fp) : fp_(fp) { assert(fp != nullptr); }
 
   ~PosixLogger() override { std::fclose(fp_); }
-
+  /* 格式化日志并写日志 */
   void Logv(const char* format, std::va_list arguments) override {
     // Record the time as close to the Logv() call as possible.
     struct ::timeval now_timeval;
@@ -100,6 +99,9 @@ class PosixLogger final : public Logger {
         // The dynamically-allocated buffer was incorrectly sized. This should
         // not happen, assuming a correct implementation of std::(v)snprintf.
         // Fail in tests, recover by truncating the log message in production.
+        /* 动态分配的缓冲区大小不正确。 这不应该发生，假设 std::(v)snprintf
+         * 的正确实现。 测试失败，通过截断生产中的日志消息来恢复。 */
+        // 似乎这里是永远不会发生的
         assert(false);
         buffer_offset = buffer_size - 1;
       }
