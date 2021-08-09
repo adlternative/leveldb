@@ -236,6 +236,11 @@ class LEVELDB_EXPORT SequentialFile {
   // If an error was encountered, returns a non-OK status.
   //
   // REQUIRES: External synchronization
+  /* 从文件中最多读取“n”个字节。 “scratch[0..n-1]”可以由这个例程写入。
+  将“*result”设置为读取的数据（包括成功读取的字节数少于“n”个字节）。
+  可以将“*result”设置为指向“scratch[0..n-1]”中的数据，因此当使用“*result”时，“scratch[0..n-1]”必须处于活动状态。
+  如果遇到错误，则返回非 OK 状态。
+  要求：外部同步 */
   virtual Status Read(size_t n, Slice* result, char* scratch) = 0;
 
   // Skip "n" bytes from the file. This is guaranteed to be no
