@@ -81,7 +81,7 @@ void BlockBuilder::Add(const Slice& key, const Slice& value) {
   assert(buffer_.empty()  // No values yet?
          || options_->comparator->Compare(key, last_key_piece) > 0);
   size_t shared = 0;
-  /* 目前的项数 % 16 < 16 */
+  /* 目前的项数 % 16 != 0*/
   if (counter_ < options_->block_restart_interval) {
     // See how much sharing to do with previous string
     /* 找到当前 key 字符串长度和 last_key_piece 长度的最小值 */

@@ -12,6 +12,7 @@ Iterator::Iterator() {
 }
 
 Iterator::~Iterator() {
+  /* 迭代器析构的时候执行清理函数 */
   if (!cleanup_head_.IsEmpty()) {
     cleanup_head_.Run();
     for (CleanupNode* node = cleanup_head_.next; node != nullptr;) {
@@ -23,6 +24,7 @@ Iterator::~Iterator() {
   }
 }
 
+/* 注册清理函数  添加到链表上 */
 void Iterator::RegisterCleanup(CleanupFunction func, void* arg1, void* arg2) {
   assert(func != nullptr);
   CleanupNode* node;
@@ -39,7 +41,7 @@ void Iterator::RegisterCleanup(CleanupFunction func, void* arg1, void* arg2) {
 }
 
 namespace {
-
+/* 空迭代器 非法，不可以 next prev key value */
 class EmptyIterator : public Iterator {
  public:
   EmptyIterator(const Status& s) : status_(s) {}
