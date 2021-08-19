@@ -61,7 +61,7 @@ class LEVELDB_EXPORT Comparator {
   // Changes *key to a short string >= *key.
   // Simple comparator implementations may return with *key unchanged,
   // i.e., an implementation of this method that does nothing is correct.
-  // 将 *key 更改为比它大的短字符串 .
+  // 将 *key 更改成一个比它短且比它大的key .
   // 简单的比较器实现可以在 *key 不变的情况下返回，
   // 即，这个方法的一个什么都不做的实现是正确的。
   virtual void FindShortSuccessor(std::string* key) const = 0;

@@ -5,6 +5,7 @@
 #include "table/two_level_iterator.h"
 
 #include "leveldb/table.h"
+
 #include "table/block.h"
 #include "table/format.h"
 #include "table/iterator_wrapper.h"
@@ -39,6 +40,7 @@ class TwoLevelIterator : public Iterator {
   }
   Status status() const override {
     // It'd be nice if status() returned a const Status& instead of a Status
+    /* 检查 index_iter_ 的状态 如果没有错再检查 data_iter_ 的状态 */
     if (!index_iter_.status().ok()) {
       return index_iter_.status();
     } else if (data_iter_.iter() != nullptr && !data_iter_.status().ok()) {

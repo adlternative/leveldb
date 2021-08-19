@@ -15,6 +15,9 @@ class Env;
 // all non-file-storage tasks to base_env. The caller must delete the result
 // when it is no longer needed.
 // *base_env must remain live while the result is in use.
+//返回一个将数据存储在内存和委托中的新环境
+//所有非文件存储任务到 base_env。当它不再需要时，调用者必须删除结果
+//*base_env 在使用结果时必须保持活动状态。
 LEVELDB_EXPORT Env* NewMemEnv(Env* base_env);
 
 }  // namespace leveldb

@@ -14,6 +14,11 @@ namespace leveldb {
 // caches the valid() and key() results for an underlying iterator.
 // This can help avoid virtual function calls and also gives better
 // cache locality.
+
+//一个内部包装类，其接口类似于 Iterator
+//缓存底层迭代器的 valid() 和 key() 结果。
+//这可以帮助避免虚函数调用，也可以提供更好的
+//缓存位置。
 class IteratorWrapper {
  public:
   IteratorWrapper() : iter_(nullptr), valid_(false) {}

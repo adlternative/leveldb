@@ -5,12 +5,15 @@
 #ifndef STORAGE_LEVELDB_UTIL_TESTUTIL_H_
 #define STORAGE_LEVELDB_UTIL_TESTUTIL_H_
 
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
 #include "helpers/memenv/memenv.h"
+
 #include "leveldb/env.h"
 #include "leveldb/slice.h"
+
 #include "util/random.h"
+
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 
 namespace leveldb {
 namespace test {
@@ -19,31 +22,42 @@ MATCHER(IsOK, "") { return arg.ok(); }
 
 // Macros for testing the results of functions that return leveldb::Status or
 // absl::StatusOr<T> (for any type T).
+//用于测试返回 leveldb::Status 或
+// absl::StatusOr<T>（对于任何类型 T）。
 #define EXPECT_LEVELDB_OK(expression) \
   EXPECT_THAT(expression, leveldb::test::IsOK())
 #define ASSERT_LEVELDB_OK(expression) \
   ASSERT_THAT(expression, leveldb::test::IsOK())
 
 // Returns the random seed used at the start of the current test run.
+//返回在当前测试运行开始时使用的随机种子。
 inline int RandomSeed() {
   return testing::UnitTest::GetInstance()->random_seed();
 }
 
 // Store in *dst a random string of length "len" and return a Slice that
 // references the generated data.
+//在 *dst 中存储一个长度为“len”的随机字符串并返回一个 Slice
+//引用生成的数据。
 Slice RandomString(Random* rnd, int len, std::string* dst);
 
 // Return a random key with the specified length that may contain interesting
 // characters (e.g. \x00, \xff, etc.).
+//返回一个指定长度的随机密钥，可能包含有趣的
+//字符（例如 \x00、\xff 等）。
 std::string RandomKey(Random* rnd, int len);
 
 // Store in *dst a string of length "len" that will compress to
 // "N*compressed_fraction" bytes and return a Slice that references
 // the generated data.
+//在 *dst 中存储一个长度为“len”的字符串，它将压缩为
+//"N*compressed_fraction" 字节并返回一个引用的 Slice
+//生成的数据。
 Slice CompressibleString(Random* rnd, double compressed_fraction, size_t len,
                          std::string* dst);
 
 // A wrapper that allows injection of errors.
+//允许注入错误的包装器。
 class ErrorEnv : public EnvWrapper {
  public:
   bool writable_file_error_;

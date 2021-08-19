@@ -189,7 +189,7 @@ class PosixRandomAccessFile final : public RandomAccessFile {
     assert(fd != -1);
 
     Status status;
-		// TODO(adlternative):EINTR
+    // TODO(adlternative):EINTR
     ssize_t read_size = ::pread(fd, scratch, n, static_cast<off_t>(offset));
     *result = Slice(scratch, (read_size < 0) ? 0 : read_size);
     if (read_size < 0) {
@@ -444,7 +444,7 @@ class PosixWritableFile final : public WritableFile {
   }
 
   // buf_[0, pos_ - 1] contains data to be written to fd_.
-  char buf_[kWritableFileBufferSize];
+  char buf_[kWritableFileBufferSize];  // 缓冲区大小 65536
   size_t pos_;
   int fd_;
 

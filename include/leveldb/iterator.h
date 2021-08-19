@@ -77,6 +77,11 @@ class LEVELDB_EXPORT Iterator {
   //
   // Note that unlike all of the preceding methods, this method is
   // not abstract and therefore clients should not override it.
+  //客户端可以注册 function/arg1/arg2 三元组
+  //当这个迭代器被销毁时将被调用。
+  //
+  //注意，与前面所有的方法不同，这个方法是
+  //不是抽象的，因此客户端不应覆盖它。
   using CleanupFunction = void (*)(void* arg1, void* arg2);
   void RegisterCleanup(CleanupFunction function, void* arg1, void* arg2);
 
