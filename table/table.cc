@@ -36,6 +36,9 @@ struct Table::Rep {
   Block* index_block;
 };
 
+/* 读取文件 重建 table
+此过程中会拿出 footer -> metaindex,index -> filter (index 暂时不用)
+*/
 Status Table::Open(const Options& options, RandomAccessFile* file,
                    uint64_t size, Table** table) {
   *table = nullptr;
@@ -144,21 +147,24 @@ void Table::ReadFilter(const Slice& filter_handle_value) {
   if (block.heap_allocated) {
     rep_->filter_data = block.data.data();  // Will need to delete later
   }
-  /* 重建 filterblock */
+  /* 重建 filter block */
   rep_->filter = new FilterBlockReader(rep_->options.filter_policy, block.data);
 }
 
 Table::~Table() { delete rep_; }
 
+/* 删除一个块 from arg */
 static void DeleteBlock(void* arg, void* ignored) {
   delete reinterpret_cast<Block*>(arg);
 }
 
+/* 删除一个块 from value */
 static void DeleteCachedBlock(const Slice& key, void* value) {
   Block* block = reinterpret_cast<Block*>(value);
   delete block;
 }
 
+/* 在缓存中删除一个句柄的引用计数 */
 static void ReleaseBlock(void* arg, void* h) {
   Cache* cache = reinterpret_cast<Cache*>(arg);
   Cache::Handle* handle = reinterpret_cast<Cache::Handle*>(h);
@@ -228,8 +234,10 @@ Iterator* Table::BlockReader(void* arg, const ReadOptions& options,
     iter = block->NewIterator(table->rep_->options.comparator);
     /* 根据是否缓存注册不同清理函数 */
     if (cache_handle == nullptr) {
+      /* 删除块 */
       iter->RegisterCleanup(&DeleteBlock, block, nullptr);
     } else {
+      /* ref count-- */
       iter->RegisterCleanup(&ReleaseBlock, block_cache, cache_handle);
     }
   } else {
@@ -246,6 +254,7 @@ Iterator* Table::NewIterator(const ReadOptions& options) const {
       &Table::BlockReader, const_cast<Table*>(this), options);
 }
 
+/* 获取 k 对应的数据 kv 并且调用回调 */
 Status Table::InternalGet(const ReadOptions& options, const Slice& k, void* arg,
                           void (*handle_result)(void*, const Slice&,
                                                 const Slice&)) {
@@ -254,7 +263,7 @@ Status Table::InternalGet(const ReadOptions& options, const Slice& k, void* arg,
   Iterator* iiter = rep_->index_block->NewIterator(rep_->options.comparator);
   /* 找 k */
   iiter->Seek(k);
-  /* 找到了 */
+  /* 找到了 k 对应的 index 块 */
   if (iiter->Valid()) {
     /* 获取值  index_block value 存放的是 数据块的 [offset, size] */
     Slice handle_value = iiter->value();
@@ -266,8 +275,11 @@ Status Table::InternalGet(const ReadOptions& options, const Slice& k, void* arg,
         !filter->KeyMayMatch(handle.offset(), k)) {
       // Not found
     } else {
+      /* 找到了则从文件读取该块 iiter->value() -> [offset, size] */
       Iterator* block_iter = BlockReader(this, options, iiter->value());
+      /* 在该块中查找 k */
       block_iter->Seek(k);
+      /* 找到则调用我们的回调函数 */
       if (block_iter->Valid()) {
         (*handle_result)(arg, block_iter->key(), block_iter->value());
       }
@@ -282,6 +294,7 @@ Status Table::InternalGet(const ReadOptions& options, const Slice& k, void* arg,
   return s;
 }
 
+/* 估算一个数据块 key 在 table 中的偏移量 */
 uint64_t Table::ApproximateOffsetOf(const Slice& key) const {
   Iterator* index_iter =
       rep_->index_block->NewIterator(rep_->options.comparator);
