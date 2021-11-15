@@ -12,15 +12,25 @@
 // Version,VersionSet are thread-compatible, but require external
 // synchronization on all accesses.
 
+// DBImpl 的表示由一组版本组成。这
+//最新版本称为“当前”。旧版本可能会保留
+//为实时迭代器提供一致的视图。
+//
+//每个版本跟踪每个级别的一组表文件。这
+//整个版本集都保存在一个 VersionSet 中。
+//
+// Version,VersionSet 是线程兼容的，但需要外部
+//同步所有访问。
+
 #ifndef STORAGE_LEVELDB_DB_VERSION_SET_H_
 #define STORAGE_LEVELDB_DB_VERSION_SET_H_
 
+#include "db/dbformat.h"
+#include "db/version_edit.h"
 #include <map>
 #include <set>
 #include <vector>
 
-#include "db/dbformat.h"
-#include "db/version_edit.h"
 #include "port/port.h"
 #include "port/thread_annotations.h"
 
@@ -42,6 +52,10 @@ class WritableFile;
 // Return the smallest index i such that files[i]->largest >= key.
 // Return files.size() if there is no such file.
 // REQUIRES: "files" contains a sorted list of non-overlapping files.
+
+//返回最小索引 i 使得 files[i]->largest >= key。
+//如果没有这样的文件，则返回 files.size()。
+//要求：“files”包含非重叠文件的排序列表。
 int FindFile(const InternalKeyComparator& icmp,
              const std::vector<FileMetaData*>& files, const Slice& key);
 
@@ -51,6 +65,12 @@ int FindFile(const InternalKeyComparator& icmp,
 // largest==nullptr represents a key largest than all keys in the DB.
 // REQUIRES: If disjoint_sorted_files, files[] contains disjoint ranges
 //           in sorted order.
+
+//如果“files”中的某些文件与用户键范围[*最小，*最大]重叠，则返回 true
+// smallest==nullptr 表示一个小于数据库中所有键的键。
+// large==nullptr 表示一个比数据库中所有键都大的键。
+//要求：如果 disjoint_sorted_files，files[] 包含不相交的范围
+//按顺序排列。
 bool SomeFileOverlapsRange(const InternalKeyComparator& icmp,
                            bool disjoint_sorted_files,
                            const std::vector<FileMetaData*>& files,
@@ -62,6 +82,10 @@ class Version {
   // Lookup the value for key.  If found, store it in *val and
   // return OK.  Else return a non-OK status.  Fills *stats.
   // REQUIRES: lock is not held
+
+  //查找键的值。如果找到，将其存储在 *val 和
+  //返回确定。否则返回非 OK 状态。填充 *stats。
+  //要求：未持有锁
   struct GetStats {
     FileMetaData* seek_file;
     int seek_file_level;
@@ -70,6 +94,10 @@ class Version {
   // Append to *iters a sequence of iterators that will
   // yield the contents of this Version when merged together.
   // REQUIRES: This version has been saved (see VersionSet::SaveTo)
+
+  //将迭代器序列附加到 *iters
+  //合并在一起时产生此版本的内容。
+  //要求：此版本已保存（参见 VersionSet::SaveTo）
   void AddIterators(const ReadOptions&, std::vector<Iterator*>* iters);
 
   Status Get(const ReadOptions&, const LookupKey& key, std::string* val,
@@ -78,16 +106,28 @@ class Version {
   // Adds "stats" into the current state.  Returns true if a new
   // compaction may need to be triggered, false otherwise.
   // REQUIRES: lock is held
+
+  //将“stats”添加到当前状态。如果是新的，则返回 true
+  //可能需要触发压缩，否则为 false。
+  //要求：锁被持有
   bool UpdateStats(const GetStats& stats);
 
   // Record a sample of bytes read at the specified internal key.
   // Samples are taken approximately once every config::kReadBytesPeriod
   // bytes.  Returns true if a new compaction may need to be triggered.
   // REQUIRES: lock is held
+
+  //记录在指定内部键读取的字节样本。
+  //大约每 config::kReadBytesPeriod 字节 采样一次
+  //如果可能需要触发新的压缩，则返回 true。
+  //要求：锁被持有
   bool RecordReadSample(Slice key);
 
   // Reference count management (so Versions do not disappear out from
   // under live iterators)
+
+  //引用计数管理（因此版本不会从
+  //在实时迭代器下）
   void Ref();
   void Unref();
 
@@ -101,11 +141,19 @@ class Version {
   // some part of [*smallest_user_key,*largest_user_key].
   // smallest_user_key==nullptr represents a key smaller than all the DB's keys.
   // largest_user_key==nullptr represents a key largest than all the DB's keys.
+
+  //如果指定级别中的某些文件重叠，则返回 true
+  //[*smallest_user_key,*largest_user_key] 的某些部分。
+  // smallest_user_key==nullptr 代表一个小于所有数据库键的键。
+  // large_user_key==nullptr 表示一个比所有数据库的键都大的键。
   bool OverlapInLevel(int level, const Slice* smallest_user_key,
                       const Slice* largest_user_key);
 
   // Return the level at which we should place a new memtable compaction
   // result that covers the range [smallest_user_key,largest_user_key].
+
+  //返回我们应该放置新的内存表压缩的级别
+  //覆盖范围 [smallest_user_key,largest_user_key] 的结果。
   int PickLevelForMemTableOutput(const Slice& smallest_user_key,
                                  const Slice& largest_user_key);
 
@@ -142,24 +190,38 @@ class Version {
   // false, makes no more calls.
   //
   // REQUIRES: user portion of internal_key == user_key.
+
+  //为每个与 user_key 重叠的文件调用 func(arg, level, f)
+  //从新到旧排序。如果调用 func 返回
+  // false，不再调用。
+  //
+  //要求：internal_key 的用户部分 == user_key。
   void ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
                           bool (*func)(void*, int, FileMetaData*));
 
-  VersionSet* vset_;  // VersionSet to which this Version belongs
-  Version* next_;     // Next version in linked list
-  Version* prev_;     // Previous version in linked list
-  int refs_;          // Number of live refs to this version
+  VersionSet*
+      vset_;  // VersionSet to which this Version belongs 此版本所属的版本集
+  Version* next_;  // Next version in linked list 链表中的下一个版本
+  Version* prev_;  // Previous version in linked list 链表中的上一版本
+  int refs_;  // Number of live refs to this version 此版本的实时引用数
 
   // List of files per level
+  /* 每一层的文件列表 */
   std::vector<FileMetaData*> files_[config::kNumLevels];
 
   // Next file to compact based on seek stats.
+
+  //根据搜索统计数据压缩下一个文件。
   FileMetaData* file_to_compact_;
   int file_to_compact_level_;
 
   // Level that should be compacted next and its compaction score.
   // Score < 1 means compaction is not strictly needed.  These fields
   // are initialized by Finalize().
+
+  //接下来应该压缩的级别及其压缩分数。
+  // Score < 1 表示不严格需要压缩。这些领域
+  //由 Finalize() 初始化。
   double compaction_score_;
   int compaction_level_;
 };
@@ -178,6 +240,12 @@ class VersionSet {
   // current version.  Will release *mu while actually writing to the file.
   // REQUIRES: *mu is held on entry.
   // REQUIRES: no other thread concurrently calls LogAndApply()
+
+  //将 *edit 应用到当前版本以形成一个新的描述符
+  //都保存到持久状态并安装为新的
+  //当前版本。将在实际写入文件时释放 *mu。
+  //要求：*mu 在进入时被保留。
+  //要求：没有其他线程同时调用 LogAndApply()
   Status LogAndApply(VersionEdit* edit, port::Mutex* mu)
       EXCLUSIVE_LOCKS_REQUIRED(mu);
 
@@ -293,11 +361,14 @@ class VersionSet {
 
   void AppendVersion(Version* v);
 
+  /* db impl */
   Env* const env_;
   const std::string dbname_;
   const Options* const options_;
   TableCache* const table_cache_;
   const InternalKeyComparator icmp_;
+
+  /* db metadata */
   uint64_t next_file_number_;
   uint64_t manifest_file_number_;
   uint64_t last_sequence_;
@@ -305,13 +376,19 @@ class VersionSet {
   uint64_t prev_log_number_;  // 0 or backing store for memtable being compacted
 
   // Opened lazily
+  /* menifest文件相关 */
   WritableFile* descriptor_file_;
   log::Writer* descriptor_log_;
+  /* version 版本管理 */
   Version dummy_versions_;  // Head of circular doubly-linked list of versions.
+                            // 版本循环双向链表的头部。
   Version* current_;        // == dummy_versions_.prev_
 
   // Per-level key at which the next compaction at that level should start.
   // Either an empty string, or a valid InternalKey.
+
+  //该级别的下一个压缩应该开始的每级键。
+  //空字符串或有效的 InternalKey。
   std::string compact_pointer_[config::kNumLevels];
 };
 

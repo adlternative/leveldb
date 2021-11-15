@@ -5,11 +5,10 @@
 #ifndef STORAGE_LEVELDB_DB_VERSION_EDIT_H_
 #define STORAGE_LEVELDB_DB_VERSION_EDIT_H_
 
+#include "db/dbformat.h"
 #include <set>
 #include <utility>
 #include <vector>
-
-#include "db/dbformat.h"
 
 namespace leveldb {
 
@@ -60,6 +59,10 @@ class VersionEdit {
   // Add the specified file at the specified number.
   // REQUIRES: This version has not been saved (see VersionSet::SaveTo)
   // REQUIRES: "smallest" and "largest" are smallest and largest keys in file
+
+  //在指定编号处添加指定文件。
+  //要求：此版本尚未保存（参见 VersionSet::SaveTo）
+  //要求：“smallest”和“largest”是文件中最小和最大的键
   void AddFile(int level, uint64_t file, uint64_t file_size,
                const InternalKey& smallest, const InternalKey& largest) {
     FileMetaData f;
