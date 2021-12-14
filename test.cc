@@ -2,6 +2,7 @@
 #include <iostream>
 #include <string>
 
+#include "leveldb/filter_policy.h"
 #include "leveldb/options.h"
 
 #include "./include/leveldb/db.h"
@@ -149,5 +150,74 @@ TEST(leveldb, BigKeyGet) {
   auto rc = db->Get(leveldb::ReadOptions(), key, &val);
   EXPECT_TRUE(rc.ok()) << rc.ToString() << std::endl;
   EXPECT_EQ(val, "hihi");
+  delete db;
+}
+
+TEST(leveldb, PutTestWithFilter) {
+  leveldb::DB* db;
+  leveldb::Options options;
+  options.filter_policy = leveldb::NewBloomFilterPolicy(10);
+  options.create_if_missing = true;
+  auto status = leveldb::DB::Open(options, "/tmp/fudb", &db);
+  if (!status.ok()) {
+    std::cout << status.ToString() << std::endl;
+    return;
+  }
+
+  status = db->Put(leveldb::WriteOptions(), "hehe2", "hihi2");
+  if (!status.ok()) {
+    printf("put failed! err:%s\n", status.ToString().c_str());
+  } else {
+    printf("put ok!\n");
+  }
+
+  delete db;
+}
+
+TEST(leveldb, GetTestWithFilter) {
+  leveldb::DB* db;
+  leveldb::Options options;
+  options.filter_policy = leveldb::NewBloomFilterPolicy(10);
+  options.create_if_missing = true;
+  auto status = leveldb::DB::Open(options, "/tmp/fudb", &db);
+  if (!status.ok()) {
+    std::cout << status.ToString() << std::endl;
+    return;
+  }
+
+  string result_val;
+
+  db->Get(leveldb::ReadOptions(), "hehe", &result_val);
+  printf("[%s %s]\n", "heheh", result_val.c_str());
+  if (!status.ok()) {
+    printf("get failed! err:%s\n", status.ToString().c_str());
+  } else {
+    printf("get ok!\n");
+  }
+  delete db;
+}
+
+TEST(leveldb, PutAndDelete) {
+  leveldb::DB* db;
+  leveldb::Options options;
+  string key = "key";
+  string value = "value";
+
+  options.create_if_missing = true;
+  auto rc = leveldb::DB::Open(options, "/tmp/testdb3", &db);
+  EXPECT_TRUE(rc.ok()) << rc.ToString() << std::endl;
+
+  string result_val;
+  rc = db->Put(leveldb::WriteOptions(), key, value);
+  EXPECT_TRUE(rc.ok()) << rc.ToString() << std::endl;
+
+  rc = db->Get(leveldb::ReadOptions(), key, &result_val);
+  EXPECT_TRUE(rc.ok()) << rc.ToString() << std::endl;
+  printf("[%s %s]\n", key.c_str(), result_val.c_str());
+
+  rc = db->Delete(leveldb::WriteOptions(), key);
+  EXPECT_TRUE(rc.ok()) << rc.ToString() << std::endl;
+  rc = db->Get(leveldb::ReadOptions(), key, &result_val);
+  EXPECT_TRUE(rc.IsNotFound()) << rc.ToString() << std::endl;
   delete db;
 }

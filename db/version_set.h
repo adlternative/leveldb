@@ -387,7 +387,7 @@ class VersionSet {
   // Per-level key at which the next compaction at that level should start.
   // Either an empty string, or a valid InternalKey.
 
-  //该级别的下一个压缩应该开始的每级键。
+  //每个级别的键，该级别的下一次压缩应该从该键开始。
   //空字符串或有效的 InternalKey。
   std::string compact_pointer_[config::kNumLevels];
 };

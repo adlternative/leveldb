@@ -39,6 +39,16 @@ void VersionEdit::Clear() {
 }
 
 void VersionEdit::EncodeTo(std::string* dst) const {
+  /*
+  |kComparator|comparator_len|comparator_data|
+  |kLogNumber|logNumber_len|logNumber_data|
+  |kPrevLogNumber|...|
+  |kNextFileNumber|...|
+  |kLastSequence|...|
+  compact_pointers_
+  deleted_files_
+  new_files_
+ */
   if (has_comparator_) {
     PutVarint32(dst, kComparator);
     PutLengthPrefixedSlice(dst, comparator_);
