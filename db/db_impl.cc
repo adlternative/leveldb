@@ -607,8 +607,6 @@ void DBImpl::CompactMemTable() {
   if (s.ok()) {
     // Commit to the new state
     /* 删除 imm */
-    imm_->Unref();
-    imm_ = nullptr;
     has_imm_.store(false, std::memory_order_release);
     /* 删除那些不需要的文件 */
     RemoveObsoleteFiles();
@@ -679,10 +677,10 @@ Status DBImpl::TEST_CompactMemTable() {
   if (s.ok()) {
     // Wait until the compaction completes
     MutexLock l(&mutex_);
-    while (imm_ != nullptr && bg_error_.ok()) {
+    while (has_imm_.load(std::memory_order_relaxed) && bg_error_.ok()) {
       background_work_finished_signal_.Wait();
     }
-    if (imm_ != nullptr) {
+    if (has_imm_.load(std::memory_order_relaxed)) {
       s = bg_error_;
     }
   }
@@ -711,8 +709,8 @@ void DBImpl::MaybeScheduleCompaction() {
   } else if (!bg_error_.ok()) {
     // 后台错误 则退出就OK;
     // Already got an error; no more changes
-  } else if (imm_ == nullptr && manual_compaction_ == nullptr &&
-             !versions_->NeedsCompaction()) {
+  } else if (!has_imm_.load(std::memory_order_relaxed) &&
+             manual_compaction_ == nullptr && !versions_->NeedsCompaction()) {
     // No work to be done
     /* imm 为空 并且 没有手动压实 并且当前版本的压缩分数 <1
      * 并且没有指定需要压实的文件
@@ -754,7 +752,7 @@ void DBImpl::BackgroundCall() {
 void DBImpl::BackgroundCompaction() {
   mutex_.AssertHeld();
   /* minor compaction */
-  if (imm_ != nullptr) {
+  if (has_imm_.load(std::memory_order_relaxed)) {
     CompactMemTable();
     return;
   }
@@ -991,7 +989,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
     if (has_imm_.load(std::memory_order_relaxed)) {
       const uint64_t imm_start = env_->NowMicros();
       mutex_.Lock();
-      if (imm_ != nullptr) {
+      if (has_imm_.load(std::memory_order_relaxed)) {
         CompactMemTable();
         // Wake up MakeRoomForWrite() if necessary.
         background_work_finished_signal_.SignalAll();
@@ -1453,7 +1451,7 @@ Status DBImpl::MakeRoomForWrite(bool force) {
 
       /* 注意只有 mem 够用或者后台出错才可以break */
       break;
-    } else if (imm_ != nullptr) {
+    } else if (has_imm_.load(std::memory_order_relaxed)) {
       // We have filled up the current memtable, but the previous
       // one is still being compacted, so we wait.
       /* 等待上一个 imem -> l0 minor compaction */
@@ -1482,6 +1480,7 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       logfile_number_ = new_log_number;
       log_ = new log::Writer(lfile);
       /* mem -> imm */
+      if (imm_ != nullptr) imm_->Unref();
       imm_ = mem_;
       has_imm_.store(true, std::memory_order_release);
       /* new mem */
@@ -1545,7 +1544,7 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
     if (mem_) {
       total_usage += mem_->ApproximateMemoryUsage();
     }
-    if (imm_) {
+    if (has_imm_.load(std::memory_order_relaxed)) {
       total_usage += imm_->ApproximateMemoryUsage();
     }
     char buf[50];
