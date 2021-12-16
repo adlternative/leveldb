@@ -579,6 +579,19 @@ void Version::GetOverlappingInputs(int level, const InternalKey* begin,
   }
 }
 
+void VersionSet::DebugString() const {
+  printf("versionset:\n");
+  int version_count = 0;
+  for (Version* v = dummy_versions_.next_; v != &dummy_versions_;
+       v = v->next_) {
+      version_count++;
+      printf("version:%d", version_count);
+      for (int i = 0; i < config::kNumLevels; i++) {
+        printf("*****\n[%d] %ld\n*****\n", i , v->files_[i].size());
+      }
+  }
+}
+
 /* 将一个版本对应的所有层所有SSTABLE 信息进行打印 */
 std::string Version::DebugString() const {
   std::string r;
@@ -1341,6 +1354,7 @@ Iterator* VersionSet::MakeInputIterator(Compaction* c) {
   return result;
 }
 
+/* 挑选一些文件进行压实 */
 Compaction* VersionSet::PickCompaction() {
   Compaction* c;
   int level;
@@ -1350,14 +1364,16 @@ Compaction* VersionSet::PickCompaction() {
   const bool size_compaction = (current_->compaction_score_ >= 1);
   const bool seek_compaction = (current_->file_to_compact_ != nullptr);
   if (size_compaction) {
-    /* 似乎是当前版本就有一个对应的压实的层数（估计是哪里算出来的） */
+    /* 似乎是当前版本就有一个对应的压实的层数
+    （是在该版本生成的时候算出来的） */
     level = current_->compaction_level_;
     assert(level >= 0);
     assert(level + 1 < config::kNumLevels);
     c = new Compaction(options_, level);
 
     // Pick the first file that comes after compact_pointer_[level]
-    /* 选择了该层的一个输出的文件 */
+    /* 选择了该层的一个文件放到 input[0] 中 */
+    /* compact_pointer[level] 是上次压实过的 key */
     for (size_t i = 0; i < current_->files_[level].size(); i++) {
       FileMetaData* f = current_->files_[level][i];
       if (compact_pointer_[level].empty() ||
@@ -1391,7 +1407,8 @@ Compaction* VersionSet::PickCompaction() {
     // c->inputs_[0] earlier and replace it with an overlapping set
     // which will include the picked file.
     // 请注意，下一次调用将丢弃我们之前放置在 c->inputs_[0] 中的文件，
-    //并将其替换为包含所选文件的重叠集。
+    //并将其替换为包含所选文件的重叠集。看 L0 有多少 k 是 [smallest, largest] 的,
+    // 放到 inputs_[0] 里面
     current_->GetOverlappingInputs(0, &smallest, &largest, &c->inputs_[0]);
     assert(!c->inputs_[0].empty());
   }
@@ -1427,6 +1444,9 @@ FileMetaData* FindSmallestBoundaryFile(
     const InternalKey& largest_key) {
   const Comparator* user_cmp = icmp.user_comparator();
   FileMetaData* smallest_boundary_file = nullptr;
+  /* f.smallest.user_key = largest_key.user_key && f.smallest > largest_key */
+  /* 在 level_files 中找到所有文件 f 满足 f smallest key 比 largest_key 大 
+  而且 f 的 user_key 和 largest key 的 user_key 相同。然后用这些文件最小的那个 */
   for (size_t i = 0; i < level_files.size(); ++i) {
     FileMetaData* f = level_files[i];
     if (icmp.Compare(f->smallest, largest_key) > 0 &&
@@ -1461,12 +1481,15 @@ void AddBoundaryInputs(const InternalKeyComparator& icmp,
   InternalKey largest_key;
 
   // Quick return if compaction_files is empty.
+  /* 寻找到 compaction_files 的最大 key */
   if (!FindLargestKey(icmp, *compaction_files, &largest_key)) {
     return;
   }
 
   bool continue_searching = true;
   while (continue_searching) {
+    /* 找到 level_files 中 f.smallest > compaction_files.largest_key &&
+    f.smallest.user_key = compaction_files.largest_key.user_key  */
     FileMetaData* smallest_boundary_file =
         FindSmallestBoundaryFile(icmp, level_files, largest_key);
 

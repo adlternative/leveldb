@@ -775,6 +775,7 @@ void DBImpl::BackgroundCompaction() {
         (m->end ? m->end->DebugString().c_str() : "(end)"),
         (m->done ? "(end)" : manual_end.DebugString().c_str()));
   } else {
+    /* 选择文件进行压实 */
     c = versions_->PickCompaction();
   }
 

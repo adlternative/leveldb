@@ -221,3 +221,96 @@ TEST(leveldb, PutAndDelete) {
   EXPECT_TRUE(rc.IsNotFound()) << rc.ToString() << std::endl;
   delete db;
 }
+
+TEST(leveldb, GetProperty) {
+  leveldb::DB* db;
+  leveldb::Options options;
+
+  options.create_if_missing = true;
+  auto status = leveldb::DB::Open(options, "/tmp/testdb13", &db);
+  if (!status.ok()) {
+    std::cout << status.ToString() << std::endl;
+    return;
+  }
+
+  string result_val;
+  for (int64_t i = 72057594037927936; i >= 0; --i) {
+    string key = to_string(i);
+    EXPECT_TRUE(db->Put(leveldb::WriteOptions(), key, "hihi").ok());
+  }
+
+  string property;
+  if (db->GetProperty("leveldb.sstables", &property))
+    std::cout << property << std::endl;
+  if (db->GetProperty("leveldb.num-files-at-level1", &property))
+    std::cout << property << std::endl;
+  if (db->GetProperty("leveldb.num-files-at-level2", &property))
+    std::cout << property << std::endl;
+  if (db->GetProperty("leveldb.num-files-at-level3", &property))
+    std::cout << property << std::endl;
+  if (db->GetProperty("leveldb.num-files-at-level4", &property))
+    std::cout << property << std::endl;
+  if (db->GetProperty("leveldb.num-files-at-level5", &property))
+    std::cout << property << std::endl;
+  if (db->GetProperty("leveldb.num-files-at-level6", &property))
+    std::cout << property << std::endl;
+
+  delete db;
+}
+
+TEST(leveldb, GetPropertyAndGet) {
+  leveldb::DB* db;
+  leveldb::Options options;
+
+  options.create_if_missing = true;
+  auto status = leveldb::DB::Open(options, "/tmp/testdb13", &db);
+  if (!status.ok()) {
+    std::cout << status.ToString() << std::endl;
+    return;
+  }
+  // auto key = "72057593977871436";
+  // string result_val;
+  // for (int i = 0; i < 100; i++) {
+  //   auto rc = db->Get(leveldb::ReadOptions(), key, &result_val);
+  //   ASSERT_TRUE(rc.ok()) << rc.ToString() << std::endl;
+  //   std::cout << result_val << std::endl;
+  // }
+  // string result_val;
+  // for (int64_t i = 72057594037927936; i >= 0; --i) {
+  //   string key = to_string(i);
+  //   EXPECT_TRUE(db->Put(leveldb::WriteOptions(), key, "hihi").ok());
+  // }
+  delete db;
+}
+
+TEST(leveldb, Open) {
+  leveldb::DB* db;
+  leveldb::Options options;
+
+  options.create_if_missing = true;
+  auto status = leveldb::DB::Open(options, "/tmp/testdb13", &db);
+  if (!status.ok()) {
+    std::cout << status.ToString() << std::endl;
+    return;
+  }
+  delete db;
+}
+
+TEST(leveldb, Iterator) {
+  leveldb::DB* db;
+  leveldb::Options options;
+
+  options.create_if_missing = true;
+  auto status = leveldb::DB::Open(options, "/tmp/testdb13", &db);
+  if (!status.ok()) {
+    std::cout << status.ToString() << std::endl;
+    return;
+  }
+  leveldb::Iterator* it = db->NewIterator(leveldb::ReadOptions());
+  for (it->SeekToFirst(); it->Valid(); it->Next()) {
+    cout << it->key().ToString() << ": " << it->value().ToString() << endl;
+  }
+  assert(it->status().ok());  // Check for any errors found during the scan
+  delete it;
+  delete db;
+}

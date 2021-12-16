@@ -336,7 +336,7 @@ class VersionSet {
     char buffer[100];
   };
   const char* LevelSummary(LevelSummaryStorage* scratch) const;
-
+  void DebugString() const;
  private:
   class Builder;
 

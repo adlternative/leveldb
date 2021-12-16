@@ -219,6 +219,8 @@ struct LEVELDB_EXPORT Options {
   //许多应用程序将受益于传递结果
   //这里是 NewBloomFilterPolicy()。
   const FilterPolicy* filter_policy = nullptr;
+
+  size_t max_manifiest_size = 0;
 };
 
 // Options that control read operations
